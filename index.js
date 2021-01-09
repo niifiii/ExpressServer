@@ -3,7 +3,10 @@ global.env = secureEnv({secret:'mySecretPassword'});
 const express = require('express');
 const morgan = require('morgan');
 const cors = require('cors');
-const { json } = require('express');
+//const { json } = require('express');
+const mongo = require('mongodb')
+const MongoClient = require('mongodb').MongoClient;
+const fs = require('fs');
 
 const app = express();
 
@@ -83,7 +86,9 @@ app.post('/api/post-twit',
                     message: 'Name and Content are required!'
                 })
         }
-    })
+    }
+)
+
 
 app.listen(3000, () => {
     console.log('Listening on http://localhost:3000');

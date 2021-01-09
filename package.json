@@ -13,8 +13,11 @@
   "author": "Nicho",
   "license": "ISC",
   "dependencies": {
+    "aws-sdk": "^2.824.0",
     "cors": "^2.8.5",
     "express": "^4.17.1",
+    "fs": "^0.0.1-security",
+    "mongodb": "^3.6.3",
     "morgan": "^1.10.0",
     "secure-env": "^1.2.0"
   }
