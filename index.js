@@ -9,13 +9,78 @@ const MongoClient = require('mongodb').MongoClient;
 const fs = require('fs');
 const multer = require('multer');
 const jwt = require('jsonwebtoken');
-const passport = require('passport');
-const LocalStrategy = require('passport-local').Strategy
+const passport = require('passport'); //Core
+const LocalStrategy = require('passport-local').Strategy //Strtegy
+
 const app = express();
 const APP_PORT = global.env.APP_PORT
 
-app.use(cors());
+const mkAuth = (passport) => {
+    return (req, res, next) => { //cannot return pp(a)=>{}(a), so retun (a)=>{pp(a)=>{}(a)}
+        passport.authenticate('local',
+            (err, user, info) => {
+                if ( (null != err) || (!user) )  { //ch for error is not null or no error
+                    res.status(401)
+                    res.type('application/json')
+                    res.json({ error: err })
+                    return
+                }
+                // attach user to the request object
+                req.user = user; //have to attachit ourself due to custome middleware 
+                next()
+            }
+        )(req, res, next)
+    }
+}
 
+// configure passport with a strategy
+passport.use(
+    new LocalStrategy(
+        { usernameField: 'userName', passwordField: 'password' },
+        async (user, password, done) => {   //<--
+            // perform the authentication
+            console.info(`|LocalStrategy> userName: ${user}, password: ${password}`)
+            
+            const findUsernamePassword = async (user) => {
+                const find = mongoClient.db(MONGO_DATABASE).collection(MONGO_USERINFO_COLLECTION).find({ "userName": user})
+
+                const findResults = []
+
+                await find.forEach(
+                    function(myDoc) { findResults.unshift(myDoc)}
+                )
+
+                console.log(findResults)
+
+                return findResults
+            }
+
+            //Perform the authentication: query from db
+            try {
+                const result = await findUsernamePassword(user)
+
+                console.log(result)
+
+                if (result.length > 0)
+                    done(null, {
+                        userName: result[0].userName,
+                        email: result[0].email,
+                        loginTime: (new Date()).toString()
+                    })
+                else
+                    done('Incorrect login', false)
+            } catch(e) {
+                done(e, false)
+            } finally {
+                //
+            }
+        }
+    )
+)
+
+const localStrategyAuth = mkAuth(passport)
+
+app.use(cors());
 app.use(morgan('combined'));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json({ extended: true }));
@@ -49,7 +114,6 @@ const mongoClient = new MongoClient(
                                 //^no explicit connects
 
 //console.log(mongoClient)                                
-
 
 app.use(function(req, res, next) {
     res.header("Access-Control-Allow-Origin", "*"); // update to match the domain you will make the request from
@@ -165,7 +229,6 @@ function isValidRegistrationDetails(registrationDetails) {
     return validity
 }
 
-
 async function isUserNameInDb(registrationDetails) {
     const find = mongoClient.db(MONGO_DATABASE).collection(MONGO_USERINFO_COLLECTION).find({"userName" : registrationDetails.userName})
 
@@ -226,8 +289,6 @@ app.post('/api/register', async ( req, res) => {
             })
         }
 
-       
-
     } else {
         res.status(422)
             .json({
@@ -236,81 +297,78 @@ app.post('/api/register', async ( req, res) => {
     }
 })
 
+//Passport Routes
+const TOKEN_SECRET = global.env.TOKEN_SECRET || 'qwuE|ry0126'
 
-const mkAuth = (passport) => {
-    return (req, resp, next) => {
-        passport.authenticate('local',
-            (err, user, info) => {
-                if ((null != err) || (!user)) {
-                    resp.status(401)
-                    resp.type('application/json')
-                    resp.json({ error: err })
-                    return
-                }
-                // attach user to the request object
-                req.user = user
-                next()
+app.post('/api/authenticate', 
+  // passport middleware to perform login
+    // passport.authenticate('local', { session: false }),
+    // authenticate with custom error handling
+    localStrategyAuth,
+    (req, res) => {
+        // do something 
+        console.info(`userName: `, req.user.userName)
+        console.info(`userName: `, JSON.stringify(req.user))
+        // generate JWT token
+        const currTimestamp = (new Date()).getTime() / 1000 //get in secs
+        const token = jwt.sign({ //whole object is the paylod part of jwt
+            sub: req.user.userName,
+            iss: 'Twitta',
+            iat: currTimestamp, //<- in secs            
+            exp: currTimestamp + (60*60), //valid for 1 hr
+            //nbf: currTimestamp + 30,
+            /*exp: currTimestamp + (45),*/ //effective after 30 secs, then can use for 15 seco
+            data: {
+                userName: req.user.userName,
+                email: req.user.email,
+                loginTime: req.user.loginTime
             }
-        )(req, resp, next)
+        }, TOKEN_SECRET)
+
+        res.status(200)
+        res.type('application/json')
+        res.json({ message: `Login in at ${new Date()}`, token})
     }
-}
-
-// configure passport with a strategy
-passport.use(
-    new LocalStrategy(
-        { usernameField: 'userName', passwordField: 'passwordHash' },
-        async (user, passwordHash, done) => {
-            // perform the authentication
-            console.info(`LocalStrategy >>> userName: ${user}, password: ${passwordHash}`)
-            try { //check server for username and pw
-                const result = mongoClient.db(MONGO_DATABASE).collection(MONGO_USERINFO_COLLECTION).find({ "userName": userName, "passwordHash": passwordHash}) 
-                console.info('>>> result: ', result)
-                if (result.length > 0)
-                    done(null, {
-                        username: result[0].userName,
-                        avatar: result[0].userAvatar,//
-                        loginTime: (new Date()).toString()
-                    })
-                else
-                    done('Incorrect login', false)
-            } catch(e) {
-                done(e, false)
-            } finally {
-                //
-            }
-        }
-    )
 )
+app.get('/api/admin', 
+    (req, res, next) => {
+            const auth = req.get('Authorization');
+            if (null == auth) {
+                res.status(401)
+                res.json({message: 'Missing Authorization Header'})
+                return
+            }
+            //Bearere Authoprization
+            //Bearer <token>
+            const terms = auth.split(' ');
+            if (terms.length != 2 || (terms[0] != 'Bearer')) {
+                res.status(403)
+                res.json( { message: 'Incorrect Authorization'})
+                return
+            }
 
-const localStrategyAuth = mkAuth(passport)
-
-app.post('/api/authenticate', localStrategyAuth, (req, res) => {
-    //login
-    // do something 
-    console.info(`user: `, req.user)
-    // generate JWT token
-    const timestamp = (new Date()).getTime() / 1000
-    const token = jwt.sign({
-        sub: req.user.username,
-        iss: 'myapp',
-        iat: timestamp,
-        //nbf: timestamp + 30,
-        exp: timestamp + (60 * 60),
-        data: {
-            avatar: req.user.avatar,
-            loginTime: req.user.loginTime
-        }
-    }, TOKEN_SECRET)
-
-    resp.status(200)
-    resp.type('application/json')
-    resp.json({ message: `Login in at ${new Date()}`, token })
-})
+            const token = terms[1]
+            try {
+                const verified = jwt.verify(token, TOKEN_SECRET)
+                console.info('Verified token: ', verified)
+                req.token = verified; //add token to req for next()
+                next()
+            } catch(e) {
+                res.status(403)
+                res.json( { message: 'Incorrect token', error: e})
+                return
+            }
+    },
+    (req, res) => {
+        res.status(200);
+        res.json({ message: 'ok'})
+    }
+)
 
 //FS
 //Set destination directory for multer (multiple part file) upload
 const upload = multer({
-	dest: process.env.TMP_DIR || '/opt/tmp/uploads'
+	dest: global.env.TMP_DIR || '/opt/tmp/uploads'
 })
 
 //S3-Compatible DB Store
