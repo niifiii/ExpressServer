@@ -1,3 +1,4 @@
+//Imports
 const secureEnv = require('secure-env');
 global.env = secureEnv({secret:'mySecretPasswordisSecret'}); //npx secure-env .env -s mySecretPasswordisSecret
 const express = require('express');
@@ -11,6 +12,14 @@ const multer = require('multer');
 const jwt = require('jsonwebtoken');
 const passport = require('passport'); //Core
 const LocalStrategy = require('passport-local').Strategy //Strtegy
+const fsPromises = require('fs/promises')
+const NewsAPI = require('newsapi');
+const AWS = require('aws-sdk');//
+//const multerS3 = require('multer-s3');
+
+const NEWS_API_KEY = global.env.NEWS_API_KEY;
+
+const newsapi = new NewsAPI(NEWS_API_KEY);
 
 const app = express();
 const APP_PORT = global.env.APP_PORT
@@ -82,7 +91,7 @@ const localStrategyAuth = mkAuth(passport)
 
 app.use(cors());
 app.use(morgan('combined'));
-app.use(express.urlencoded({ extended: true }));
+app.use(express.urlencoded({ limit:'10mb', extended: true }));
 app.use(express.json({ extended: true }));
 
 // initialize passport after json and form-urlencoded
@@ -330,7 +339,8 @@ app.post('/api/authenticate',
         res.json({ message: `Login in at ${new Date()}`, token})
     }
 )
-app.get('/api/admin', 
+
+app.get('/api/admin', //the secret
     (req, res, next) => {
             const auth = req.get('Authorization');
             if (null == auth) {
@@ -361,18 +371,157 @@ app.get('/api/admin',
     },
     (req, res) => {
         res.status(200);
+
         res.json({ message: 'ok'})
     }
 )
 
-//FS
-//Set destination directory for multer (multiple part file) upload
-const upload = multer({
-	dest: global.env.TMP_DIR || '/opt/tmp/uploads'
+ //uncomment this is ok the bot is blocked by a user neeed to set a new bot
+app.get('/api/news', async (req, res) => {    
+    //const length =
+        
+    const country = 'sg'
+    let pageSize = null
+
+    if (req.query.numberOfArticles) {
+        pageSize = req.query.numberOfArticles;
+    } else {
+        pageSize = 5;
+    }
+
+    var results = await newsapi.v2.topHeadlines({
+        pageSize,
+        country
+    }).then(response => {
+        //console.log(response); 
+        return response;
+    })
+
+    //console.log('results: ', results.articles[0])
+
+    const articles = results.articles
+    console.log(articles)
+    console.log('pageSize: ', pageSize)
+    //const resultObj = results.json()
+    //console.log(resultObj)
+    //const articles = resultObj.articles
+
+    res.status(200)
+        .json(articles)
 })
 
-//S3-Compatible DB Store
 
+
+//FS
+//Set destination directory for multer (multiple part file) upload
+//const upload = multer({
+//	dest: global.env.TMP_DIR || '/opt/tmp/uploads'
+//})
+
+//S3-Compatible DB Store/////////////////////////////////////////////////////////////////////
+
+const AWS_S3_HOSTNAME = global.env.AWS_S3_HOSTNAME; //digitalocean is aws compatible s3 store
+const AWS_S3_ACCESSKEY_ID = global.env.AWS_S3_ACCESSKEY_ID;//
+const AWS_S3_SECRET_ACCESSKEY = global.env.AWS_S3_SECRET_ACCESSKEY;//
+const AWS_S3_BUCKET_NAME = global.env.AWS_S3_BUCKET_NAME;//
+
+///////////////////////////////////////////// UPLOAD TO S3
+const COLLECTION = 'temperature'
+/*
+ops: [
+    {
+      ts: 2021-01-12T06:40:17.745Z,
+      user: undefined,
+      temperature: NaN,
+      image: '7a47428fdd6b5b69b04b3c8ed1fa67d6',
+      _id: 5ffd4452cb4c5643384b500c
+    }
+  ],
+  insertedCount: 1,
+  insertedId: 5ffd4452cb4c5643384b500c
+}
+*/
+
+const mkUserProfilePicEntry = (params, imageName) => {
+	return {
+		timeStamp: new Date(),
+		user: params.userName,
+		imageName
+	}
+}
+
+const readFile = (path) => new Promise(
+	(resolve, reject) => 
+		fs.readFile(path, (err, buff) => {
+			if (null != err)
+				reject(err)
+			else 
+				resolve(buff)
+		})
+)
+
+const putObject = (file, buff, s3) => new Promise(
+	(resolve, reject) => {
+		const params = {
+			Bucket: AWS_S3_BUCKET_NAME,
+			Key: file.filename, 
+			Body: buff,
+			ACL: 'public-read',
+			ContentType: file.mimetype,
+			ContentLength: file.size
+		}
+		s3.putObject(params, (err, result) => {
+			if (null != err)
+				reject(err)
+			else
+				resolve(result)
+		})
+	}
+)
+
+const s3 = new AWS.S3({
+	endpoint: new AWS.Endpoint(AWS_S3_HOSTNAME),
+	accessKeyId: AWS_S3_ACCESSKEY_ID,
+	secretAccessKey: AWS_S3_SECRET_ACCESSKEY
+})
+
+const upload = multer({
+	dest: global.env.UPLOADFILE_TMP_DIR || '/opt/tmp/uploads'
+})
+
+app.post('/api/upload', upload.single('avatar'), (req, resp) => {
+
+	console.info('>>> req.body: ', req.body)
+	console.info('>>> req.file: ', req.file)
+
+	resp.on('finish', () => {
+		// delete the temp file
+		fs.unlink(req.file.path, () => { })
+	})
+
+	const doc = mkUserProfilePicEntry(req.body, req.file.filename)
+
+	readFile(req.file.path)
+		.then(buff => 
+			putObject(req.file, buff, s3)
+		)
+		.then(() => 
+			mongoClient.db(MONGO_DATABASE).collection(COLLECTION)
+				.insertOne(doc)
+		)
+		.then(results => {
+			console.info('insert results: ', results)
+			resp.status(200)
+			resp.json({ imageName: results.ops[0].imageName })
+		})
+		.catch(error => {
+			console.error('insert error: ', error)
+			resp.status(500)
+			resp.json({ error })
+		})
+})
+
+///////////////////////////////////////////////////////////////////////////////////////////////
 
 /* Run Server*/
 
@@ -380,10 +529,12 @@ const mongoConnection = (async () => { return mongoClient.connect()})(); //conne
 
 const s3Connection = new Promise( //test s3 connection
     (resolve, reject) => {
-        if ((!!global.env.AWS_S3_ACCESSKEY_ID) && (!!global.env.AWS_S3_SECRET_ACCESSKEY))
+        if ((!!global.env.AWS_S3_ACCESSKEY_ID) && (!!global.env.AWS_S3_SECRET_ACCESSKEY)) {
+            console.log('s3 keys found!')
             resolve()
-        else
+        } else {
             reject('S3 keys not found')
+        }
     }
 )
 //
