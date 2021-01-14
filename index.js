@@ -1,6 +1,6 @@
 //Imports
-const secureEnv = require('secure-env');
-global.env = secureEnv({secret:'mySecretPasswordisSecret'}); //npx secure-env .env -s mySecretPasswordisSecret
+//const secureEnv = require('secure-env');
+//global.env = secureEnv({secret:'mySecretPasswordisSecret'}); //npx secure-env .env -s mySecretPasswordisSecret
 const express = require('express');
 const morgan = require('morgan');
 const cors = require('cors');
