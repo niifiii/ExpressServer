@@ -27,13 +27,38 @@ const EMAIL_PASS = global.env.EMAIL_PASSWORD
 ///////////
 const nodemailer = require('nodemailer');
 
+//const transporter = nodemailer.createTransport({
+//  service: 'gmail',
+//  auth: {
+//    user: EMAIL_ADDRESS,
+//    pass: EMAIL_PASS
+//  }
+//});
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: EMAIL_ADDRESS,
-    pass: EMAIL_PASS
-  }
-});
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true,
+    auth: {
+        user: EMAIL_ADDRESS,
+        pass: EMAIL_PASS,
+    }
+})
+
+
+
+/*
+const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      type: 'OAuth2',
+      user: global.env.GMAIL_CLIENT_USER, // nifi
+      clientId: global.env.GMAIL_CLIENT_ID, // ''
+      clientSecret: global.env.GMAIL_CLIENT_SECRET, // ''
+      refreshToken: global.env.GMAIL_REFRESH_TOKEN, // ''
+      accessToken: global.env.GMAIL_ACCESS_TOKEN, // ??
+    },
+  });
+  */
 ///////////
 
 const NEWS_API_KEY = global.env.NEWS_API_KEY;
@@ -280,7 +305,7 @@ function isValidRegistrationDetails(registrationDetails) {
     let validity = registrationDetails.userName && (registrationDetails.userName.toString().trim() !== '') && 
         registrationDetails.password && (registrationDetails.password.toString().trim() !== '') &&
         registrationDetails.email && (registrationDetails.password.toString().trim() !== '');
-    console.log(validity)
+    console.log('isValidRD: ', validity)
     return validity
 }
 
@@ -303,7 +328,7 @@ async function isUserNameInDb(registrationDetails) {
 //implement if have time
 const mailRegistered = ( userName, userEmail) => { 
     return {
-        from: 'youremail@gmail.com',
+        from: `Twitta <${EMAIL_ADDRESS}>`,
         to: userEmail,
         subject: `Hello ${userName}, this is Twitta! Your registration is successful!`,
         text: `Hello ${userName}, Thank you for joining us!`
@@ -311,7 +336,7 @@ const mailRegistered = ( userName, userEmail) => {
 };
 
 app.post('/api/register', async ( req, res) => {
-    console.log(req.body)
+    console.log('a', req.body)
     const isUserNameInDbVar = await isUserNameInDb(req.body)
     console.log('isUserNameInDb', isUserNameInDbVar)
     
@@ -327,7 +352,7 @@ app.post('/api/register', async ( req, res) => {
 
     if (isValidRegistrationDetails(req.body)) { 
 
-        console.log(req.body)
+        console.log('b', req.body)
 
         //test if user exists
         const user = req.body.userName.trim().toString();
@@ -351,10 +376,13 @@ app.post('/api/register', async ( req, res) => {
             joined: new Date()
         }
         //mongoClient.db(MONGO_DATABASE).collection(MONGO_TWITS_COLLECTION).updateOne({userName: twit.name}, { $set: {"userName" : twit.name, "comment" : twit.content, "created" : twit.created } }, {upsert:true})
-        mongoClient.db(MONGO_DATABASE).collection(MONGO_USERINFO_COLLECTION).insertOne(
+        await mongoClient.db(MONGO_DATABASE).collection(MONGO_USERINFO_COLLECTION).insertOne(
             {"userName" : registrationDetails.userName, "password" : registrationDetails.password, "email" : registrationDetails.email, "joined" : registrationDetails.joined} 
         )
-        const find = mongoClient.db(MONGO_DATABASE).collection(MONGO_TWITS_COLLECTION).find({"userName" : registrationDetails.userName})
+
+        console.log('email', registrationDetails.email)
+
+        const find = await mongoClient.db(MONGO_DATABASE).collection(MONGO_USERINFO_COLLECTION).find({"userName" : registrationDetails.userName})
 
         const findResults = [] //forcstruct
 
@@ -362,7 +390,19 @@ app.post('/api/register', async ( req, res) => {
             function(myDoc) { findResults.unshift(myDoc) }
         )
 
+        console.log('find results: ', findResults)
+
         if (findResults.length > 0) {
+            
+            transporter.sendMail(mailRegistered(registrationDetails.userName, registrationDetails.email), function(error, info){
+                if (error) {
+                    console.log(error);
+                } else {
+                    console.log('Email sent: ' + info.response);
+                    res.status(200).json({ message: `Email sent: ${info.response}`})
+                }
+            });
+            
             res.json({
                 message: 'ok', 
                 results: findResults
@@ -453,7 +493,7 @@ app.get('/api/admin', //the secret
 
 const mailResetPassword = (userEmail, newPassword) => { 
     return {
-    from: 'youremail@gmail.com',
+    from: EMAIL_ADDRESS,
     to: userEmail,
     subject: 'This is Twitta! You have resetted your password',
     text: `Your new password is ${newPassword}`
@@ -480,20 +520,49 @@ app.post('/api/send-reset-password-email', (req, res) => {
 
 */
 
-app.post('/api/reset-password'), (req, res) => {
+app.post('/api/reset-password', 
+
+    (req, res, next) => {
+        //res.setHeader('Access-Control-Allow-Origin', 'http://localhost:4200');
+
+        // Request methods you wish to allow
+        //res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE');
+
+        // Request headers you wish to allow
+        //res.setHeader('Access-Control-Allow-Headers', 'Accept, Content-Type, Referer, User-Agent');
+
+        // Set to true if you need the website to include cookies in  requests
+        //res.setHeader('Access-Control-Allow-Credentials', false);
+
+        // Check if preflight request
+        if (req.method === 'OPTIONS') {
+            res.status(200);
+            console.log('here is options')
+            res.end();
+        }
+        else {
+            // Pass to next layer of middleware
+            next();
+        }
+    }
+
+    ,
+    (req, res) => {
 
     const emailAddress = req.body.emailAddress
     ///////////////////////////////////////////////////////////////////////////// <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
     const checkEmailExistsCursor = mongoClient.db(MONGO_DATABASE).collection(MONGO_USERINFO_COLLECTION).find({ 'email': emailAddress} )
 
+    emailExistsCursorList = []
+
     checkEmailExistsCursor.forEach(
-        function(myDoc) { usersRecordsList.unshift(myDoc)}
+        function(myDoc) { emailExistsCursorList.unshift(myDoc)}
     )
 
     if (checkEmailExistsCursor.length < 0) {
         res.status(422)
             .json({ message: 'Email does not exist!'})
-            return
+        return
     }
 
     const date = new Date();
@@ -502,9 +571,11 @@ app.post('/api/reset-password'), (req, res) => {
 
     console.log(newPassword)
 
-    const emailCursor = mongoClient.db(MONGO_DATABASE).collection(MONGO_USERINFO_COLLECTION).updateOne({ 'email': emailAddress }, { 'password': newPassword } )
-    
-    transporter.sendMail(mailResetPassword(req.body.userEmail, newPassword), function(error, info){
+    const emailCursor = mongoClient.db(MONGO_DATABASE).collection(MONGO_USERINFO_COLLECTION).updateOne({ 'email': emailAddress }, { $set: { 'password': newPassword } },
+    { upsert: true } )
+     //{ 'password': newPassword }
+    //console.log(req.body.userEmail, newPassword)
+    transporter.sendMail(mailResetPassword(req.body.emailAddress, newPassword), function(error, info){
         if (error) {
             console.log(error);
         } else {
@@ -512,7 +583,8 @@ app.post('/api/reset-password'), (req, res) => {
             res.status(200).json({ message: `Email sent: ${info.response}`})
         }
     });
-}
+    
+})
 
  app.get('/api/news', async (req, res) => {    
     //const length =
@@ -614,7 +686,7 @@ ops: [
   insertedId: 5ffd4452cb4c5643384b500c
 }
 */
-
+//unused
 const mkUserProfilePicEntry = (params, imageName) => {
 	return {
 		timeStamp: new Date(),
@@ -729,7 +801,7 @@ app.get('/profile-pic', async (req, res) => {
     let profilePicCursor = mongoClient.db(MONGO_DATABASE).getCollection(MONGO_PROFILEPIC_COLLECTION).find({ 'user': req.body.userName })
     const profilePicList = []
     await usersCursor.forEach(
-            function(myDoc) { usersRecordsList.unshift(myDoc)}
+            function(myDoc) { profilePicCursor.unshift(myDoc)}
     )
 
     if (profilePicList.length < 0) {
@@ -764,7 +836,8 @@ const s3Connection = new Promise( //test s3 connection
 Promise.all([s3Connection, mongoConnection])
 	.then(() => {
 		app.listen(APP_PORT, () => {
-			console.info(`Application started on port ${APP_PORT} at ${new Date()}`)
+            console.info(`Application started on port ${APP_PORT} at ${new Date()}`)
+            console.log(EMAIL_ADDRESS, EMAIL_PASS)
 		})
 	})
 	.catch(err => { console.error('Cannot connect: ', err) })
