@@ -21,8 +21,8 @@ const md5 = require('md5');
 const fetch = require('node-fetch')
 const withQuery = require('with-query').default
 
-const EMAIL_ADDRESS = global.env.EMAIL_ADDRESS
-const EMAIL_PASS = global.env.EMAIL_PASSWORD
+const EMAIL_ADDRESS = global.env.EMAIL_ADDRESS  || process.env.EMAIL_ADDRESS
+const EMAIL_PASS = global.env.EMAIL_PASSWORD || process.env.EMAIL_PASSWORD
 
 ///////////
 const nodemailer = require('nodemailer');
@@ -61,12 +61,12 @@ const transporter = nodemailer.createTransport({
   */
 ///////////
 
-const NEWS_API_KEY = global.env.NEWS_API_KEY;
+const NEWS_API_KEY = global.env.NEWS_API_KEY || process.env.NEWS_API_KEY;
 
 const newsapi = new NewsAPI(NEWS_API_KEY);
 
 const app = express();
-const APP_PORT = global.env.APP_PORT
+const APP_PORT = global.env.APP_PORT || process.env.APP_PORT
 
 const mkAuth = (passport) => {
     return (req, res, next) => { //cannot return pp(a)=>{}(a), so retun (a)=>{pp(a)=>{}(a)}
@@ -153,10 +153,10 @@ db.connect({
 
 //MongoDB
 //MongoDb Database Settings
-const MONGO_DATABASE = global.env.MONGO_DATABASE;
-const MONGO_TWITS_COLLECTION = global.env.MONGO_TWITS_COLLECTION;
-const MONGO_USERINFO_COLLECTION = global.env.MONGO_USERINFO_COLLECTION;
-const MONGO_URL = global.env.MONGO_URL //Set MongoDb URL
+const MONGO_DATABASE = global.env.MONGO_DATABASE  || process.env.MONGO_DATABASE
+const MONGO_TWITS_COLLECTION = global.env.MONGO_TWITS_COLLECTION || process.env.MONGO_TWITS_COLLECTION
+const MONGO_USERINFO_COLLECTION = global.env.MONGO_USERINFO_COLLECTION || process.env.MONGO_USERINFO_COLLECTION
+const MONGO_URL = global.env.MONGO_URL || process.env.MONGO_URL //Set MongoDb URL
 
 //console.log(MONGO_DATABASE, MONGO_URL, APP_PORT, JSON.stringify(global.env))
 
@@ -280,7 +280,7 @@ app.get('/api/twits/:userName', async (req, res) => { // /:userName?page=1 notye
 
     const userName = req.params.userName
 
-    //console.log(userName)
+    console.log('[/api/twits/:userName]: userName: ', userName)
 
     const find = mongoClient.db(MONGO_DATABASE).collection(MONGO_TWITS_COLLECTION).find({ "userName": userName})
     
@@ -290,7 +290,7 @@ app.get('/api/twits/:userName', async (req, res) => { // /:userName?page=1 notye
         function(myDoc) { findResults.unshift(myDoc)}
     )
 
-    console.log(findResults)
+    console.log('[/api/twits/:userName] findResults: ', findResults)
 
     res.json({
         message: 'ok', 
@@ -313,9 +313,11 @@ async function isUserNameInDb(registrationDetails) {
     const find = mongoClient.db(MONGO_DATABASE).collection(MONGO_USERINFO_COLLECTION).find({"userName" : registrationDetails.userName})
 
     const findResults = [] //forcstruct
+
     await find.forEach(
         function(myDoc) { findResults.unshift(myDoc)}
     )
+
     console.log(findResults)
 
     if (findResults.length < 1) {
@@ -418,7 +420,7 @@ app.post('/api/register', async ( req, res) => {
 })
 
 //Passport Routes
-const TOKEN_SECRET = global.env.TOKEN_SECRET || 'qwuE|ry0126'
+const TOKEN_SECRET = global.env.TOKEN_SECRET || process.env.TOKEN_SECRET
 
 app.post('/api/authenticate', 
   // passport middleware to perform login
@@ -493,11 +495,11 @@ app.get('/api/admin', //the secret
 
 const mailResetPassword = (userEmail, newPassword) => { 
     return {
-    from: EMAIL_ADDRESS,
-    to: userEmail,
-    subject: 'This is Twitta! You have resetted your password',
-    text: `Your new password is ${newPassword}`
-}
+        from: EMAIL_ADDRESS,
+        to: userEmail,
+        subject: 'This is Twitta! You have resetted your password',
+        text: `Your new password is ${newPassword}`
+    }
 };
 
 /* no need
@@ -624,28 +626,31 @@ app.get("/api/twits-count/:userName", async (req, res) => { // /numUsers
     
     const userName = req.params.userName
 
-    const usersCursor = mongoClient.db(MONGO_DATABASE).collection(MONGO_USERINFO_COLLECTION).aggregate([
-        { //works on the sdesktop dun work here!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    console.log(userName)
+
+    const usersCursor = mongoClient.db(MONGO_DATABASE).collection(MONGO_TWITS_COLLECTION).aggregate([
+        { //works on the desktop dun work here!
             $match: { userName: userName }
         },
         {
             $group: {
-            _id: "$userName",
-            totalTwits: { $sum: 1 },
+                _id: "$userName",
+                totalTwits: { $sum: {$toInt: 1} },
             }
-        },
-        {
-            $sort: { _id: -1 }
         }
+//        ,
+//        {
+//          $sort: { _id: -1 }
+//        }
     ])
 
-
     const usersRecordsList = []
+
     await usersCursor.forEach(
             function(myDoc) { usersRecordsList.unshift(myDoc)}
     )
 
-    console.log("hello",usersRecordsList)
+    console.log("hello", usersRecordsList)
 
     if (usersRecordsList.length < 0) {
         res.status(422)
@@ -657,6 +662,27 @@ app.get("/api/twits-count/:userName", async (req, res) => { // /numUsers
     res.status(200).json(usersRecordsList)
 })
 
+app.get("/api/browse-users", async (req, res) => { // /numUsers
+    
+    const usersCursor = mongoClient.db(MONGO_DATABASE).collection(MONGO_USERINFO_COLLECTION).find({})
+
+    const usersRecordsList = []
+
+    await usersCursor.forEach(
+            function(myDoc) { usersRecordsList.unshift(myDoc.userName)}
+    )
+
+    console.log("hello", usersRecordsList)
+
+    if (usersRecordsList.length < 0) {
+        res.status(422)
+        res.json(
+            {message: 'No user exists'}
+        )
+    }
+
+    res.status(200).json(usersRecordsList)
+})
 //FS
 //Set destination directory for multer (multiple part file) upload
 //const upload = multer({
@@ -665,10 +691,10 @@ app.get("/api/twits-count/:userName", async (req, res) => { // /numUsers
 
 //S3-Compatible DB Store/////////////////////////////////////////////////////////////////////
 
-const AWS_S3_HOSTNAME = global.env.AWS_S3_HOSTNAME; //digitalocean is aws compatible s3 store
-const AWS_S3_ACCESSKEY_ID = global.env.AWS_S3_ACCESSKEY_ID;//
-const AWS_S3_SECRET_ACCESSKEY = global.env.AWS_S3_SECRET_ACCESSKEY;//
-const AWS_S3_BUCKET_NAME = global.env.AWS_S3_BUCKET_NAME;//
+const AWS_S3_HOSTNAME = global.env.AWS_S3_HOSTNAME || process.env.AWS_S3_HOSTNAME//digitalocean is aws compatible s3 store
+const AWS_S3_ACCESSKEY_ID = global.env.AWS_S3_ACCESSKEY_ID || process.env.AWS_S3_ACCESSKEY_ID//
+const AWS_S3_SECRET_ACCESSKEY = global.env.AWS_S3_SECRET_ACCESSKEY || process.env.AWS_S3_SECRET_ACCESSKEY//
+const AWS_S3_BUCKET_NAME = global.env.AWS_S3_BUCKET_NAME || process.env.AWS_S3_BUCKET_NAME//
 
 ///////////////////////////////////////////// UPLOAD TO S3
 const MONGO_PROFILEPIC_COLLECTION = 'ProfilePic'
@@ -686,6 +712,7 @@ ops: [
   insertedId: 5ffd4452cb4c5643384b500c
 }
 */
+
 //unused
 const mkUserProfilePicEntry = (params, imageName) => {
 	return {
@@ -731,7 +758,7 @@ const s3 = new AWS.S3({
 })
 
 const upload = multer({
-	dest: global.env.UPLOADFILE_TMP_DIR || '/opt/tmp/uploads'
+	dest: global.env.UPLOADFILE_TMP_DIR || process.env.UPLOADFILE_TMP_DIR || '/opt/tmp/uploads'
 })
 
 app.post('/api/upload', upload.single('avatar'), (req, resp) => {
@@ -777,11 +804,10 @@ app.post('/api/upload', upload.single('avatar'), (req, resp) => {
            console.log('putObject returns: ', results)
 
            return mongoClient.db(MONGO_DATABASE).collection(MONGO_PROFILEPIC_COLLECTION).updateOne(
-            {"name": req.body.userName},
-            { $set: {timeStamp: new Date(), imageName: req.file.filename}},
-            {upsert: true,}
-         )
-
+                {"name": req.body.userName},
+                { $set: {timeStamp: new Date(), imageName: req.file.filename}},
+                {upsert: true}
+            )
                      
         })
 		.then(results => {
@@ -796,27 +822,57 @@ app.post('/api/upload', upload.single('avatar'), (req, resp) => {
 		})
 })
 
-app.get('/profile-pic', async (req, res) => {
+app.post('/api/profile-pic', 
 
-    let profilePicCursor = mongoClient.db(MONGO_DATABASE).getCollection(MONGO_PROFILEPIC_COLLECTION).find({ 'user': req.body.userName })
-    const profilePicList = []
-    await usersCursor.forEach(
-            function(myDoc) { profilePicCursor.unshift(myDoc)}
-    )
+    (req, res, next) => {
+        //res.setHeader('Access-Control-Allow-Origin', 'http://localhost:4200');
 
-    if (profilePicList.length < 0) {
-        res.status(422)
-        res.json(
-            { message: 'No user exists' }
-        )
+        // Request methods you wish to allow
+        //res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE');
+
+        // Request headers you wish to allow
+        //res.setHeader('Access-Control-Allow-Headers', 'Accept, Content-Type, Referer, User-Agent');
+
+        // Set to true if you need the website to include cookies in  requests
+        //res.setHeader('Access-Control-Allow-Credentials', false);
+
+        // Check if preflight request
+        if (req.method === 'OPTIONS') {
+            res.status(200);
+            console.log('here is options')
+            res.end();
+        }
+        else {
+            // Pass to next layer of middleware
+            next();
+        }
     }
+    ,
+    async (req, res) => {
+        console.log(req.body.userName)
+        let profilePicCursor = mongoClient.db(MONGO_DATABASE).collection(MONGO_PROFILEPIC_COLLECTION).find({'name' : `${req.body.userName}` })
+        const profilePicList = []
 
-    profilePicListObject = JSON.parse(profilePicList)
+        await profilePicCursor.forEach(
+                function(myDoc) { profilePicList.unshift(myDoc)}
+        )
 
-    console.log(profilePicListObject.imageName)
+        console.log(MONGO_DATABASE, MONGO_PROFILEPIC_COLLECTION, req.body.userName, profilePicList.length === 0)
 
-    res.status(200).json({ imageName: profilePicListObject.imageName })
-})
+        if (profilePicList.length === 0) {
+            console.log('here'); res.status(404); res.json({ message: 'No user profile pic exists' });
+        } else {
+
+            console.log(profilePicList.length)
+
+            profilePicListObject = profilePicList[0] //this is an obj
+
+            console.log(profilePicListObject.imageName)
+
+            res.status(200).json({ imageName: profilePicListObject.imageName })
+        }
+    }
+)
 
 /* Run Server*/
 
@@ -824,7 +880,7 @@ const mongoConnection = (async () => { return mongoClient.connect()})(); //conne
 
 const s3Connection = new Promise( //test s3 connection
     (resolve, reject) => {
-        if ((!!global.env.AWS_S3_ACCESSKEY_ID) && (!!global.env.AWS_S3_SECRET_ACCESSKEY)) {
+        if ((!!global.env.AWS_S3_ACCESSKEY_ID || !!process.env.AWS_S3_ACCESSKEY_ID) && (!!global.env.AWS_S3_SECRET_ACCESSKEY || !!process.env.AWS_S3_SECRET_ACCESSKEY)) {
             console.log('s3 keys found!')
             resolve()
         } else {
