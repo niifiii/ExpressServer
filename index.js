@@ -92,7 +92,7 @@ passport.use(
         { usernameField: 'userName', passwordField: 'password' },
         async (user, password, done) => {   //<--
             // perform the authentication
-            console.info(`|LocalStrategy> userName: ${user}, password: ${password}`)
+            //console.info(`|LocalStrategy> userName: ${user}, password: ${password}`)
             
             const findUsernamePassword = async (user) => {
                 const find = mongoClient.db(MONGO_DATABASE).collection(MONGO_USERINFO_COLLECTION).find({ "userName": user})
@@ -893,7 +893,7 @@ Promise.all([s3Connection, mongoConnection])
 	.then(() => {
 		app.listen(APP_PORT, () => {
             console.info(`Application started on port ${APP_PORT} at ${new Date()}`)
-            console.log(EMAIL_ADDRESS, EMAIL_PASS)
+            //console.log(EMAIL_ADDRESS, EMAIL_PASS)
 		})
 	})
 	.catch(err => { console.error('Cannot connect: ', err) })
