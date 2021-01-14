@@ -21,8 +21,8 @@ const md5 = require('md5');
 const fetch = require('node-fetch')
 const withQuery = require('with-query').default
 
-const EMAIL_ADDRESS = process.env.EMAIL_ADDRESS || global.env.EMAIL_ADDRESS
-const EMAIL_PASS = process.env.EMAIL_PASSWORD || global.env.EMAIL_PASSWORD
+const EMAIL_ADDRESS = process.env.EMAIL_ADDRESS 
+const EMAIL_PASS = process.env.EMAIL_PASSWORD 
 
 ///////////
 const nodemailer = require('nodemailer');
@@ -61,12 +61,12 @@ const transporter = nodemailer.createTransport({
   */
 ///////////
 
-const NEWS_API_KEY = process.env.NEWS_API_KEY || global.env.NEWS_API_KEY 
+const NEWS_API_KEY = process.env.NEWS_API_KEY
 
 const newsapi = new NewsAPI(NEWS_API_KEY);
 
 const app = express();
-const APP_PORT = process.env.APP_PORT || global.env.APP_PORT 
+const APP_PORT = process.env.APP_PORT
 
 const mkAuth = (passport) => {
     return (req, res, next) => { //cannot return pp(a)=>{}(a), so retun (a)=>{pp(a)=>{}(a)}
@@ -153,10 +153,10 @@ db.connect({
 
 //MongoDB
 //MongoDb Database Settings
-const MONGO_DATABASE = process.env.MONGO_DATABASE || global.env.MONGO_DATABASE 
-const MONGO_TWITS_COLLECTION = process.env.MONGO_TWITS_COLLECTION || global.env.MONGO_TWITS_COLLECTION
-const MONGO_USERINFO_COLLECTION = process.env.MONGO_USERINFO_COLLECTION || global.env.MONGO_USERINFO_COLLECTION
-const MONGO_URL = process.env.MONGO_URL || global.env.MONGO_URL //Set MongoDb URL
+const MONGO_DATABASE = process.env.MONGO_DATABASE
+const MONGO_TWITS_COLLECTION = process.env.MONGO_TWITS_COLLECTION
+const MONGO_USERINFO_COLLECTION = process.env.MONGO_USERINFO_COLLECTION 
+const MONGO_URL = process.env.MONGO_URL //Set MongoDb URL
 
 //console.log(MONGO_DATABASE, MONGO_URL, APP_PORT, JSON.stringify(global.env))
 
@@ -426,7 +426,7 @@ app.post('/api/register', async ( req, res) => {
 })
 
 //Passport Routes
-const TOKEN_SECRET = process.env.TOKEN_SECRET || global.env.TOKEN_SECRET 
+const TOKEN_SECRET = process.env.TOKEN_SECRET
 
 app.post('/api/authenticate', 
   // passport middleware to perform login
@@ -697,10 +697,10 @@ app.get("/api/browse-users", async (req, res) => { // /numUsers
 
 //S3-Compatible DB Store/////////////////////////////////////////////////////////////////////
 
-const AWS_S3_HOSTNAME =  process.env.AWS_S3_HOSTNAME || global.env.AWS_S3_HOSTNAME //digitalocean is aws compatible s3 store
-const AWS_S3_ACCESSKEY_ID = process.env.AWS_S3_ACCESSKEY_ID || global.env.AWS_S3_ACCESSKEY_ID
-const AWS_S3_SECRET_ACCESSKEY = process.env.AWS_S3_SECRET_ACCESSKEY || global.env.AWS_S3_SECRET_ACCESSKEY 
-const AWS_S3_BUCKET_NAME = process.env.AWS_S3_BUCKET_NAME || global.env.AWS_S3_BUCKET_NAME 
+const AWS_S3_HOSTNAME =  process.env.AWS_S3_HOSTNAME //digitalocean is aws compatible s3 store
+const AWS_S3_ACCESSKEY_ID = process.env.AWS_S3_ACCESSKEY_ID
+const AWS_S3_SECRET_ACCESSKEY = process.env.AWS_S3_SECRET_ACCESSKEY
+const AWS_S3_BUCKET_NAME = process.env.AWS_S3_BUCKET_NAME
 
 ///////////////////////////////////////////// UPLOAD TO S3
 const MONGO_PROFILEPIC_COLLECTION = 'ProfilePic'
@@ -764,7 +764,7 @@ const s3 = new AWS.S3({
 })
 
 const upload = multer({
-	dest: process.env.UPLOADFILE_TMP_DIR || global.env.UPLOADFILE_TMP_DIR || '/opt/tmp/uploads'
+	dest: process.env.UPLOADFILE_TMP_DIR || '/opt/tmp/uploads'
 })
 
 app.post('/api/upload', upload.single('avatar'), (req, resp) => {
@@ -886,7 +886,7 @@ const mongoConnection = (async () => { return mongoClient.connect()})(); //conne
 
 const s3Connection = new Promise( //test s3 connection
     (resolve, reject) => {
-        if ((!!global.env.AWS_S3_ACCESSKEY_ID || !!process.env.AWS_S3_ACCESSKEY_ID) && (!!global.env.AWS_S3_SECRET_ACCESSKEY || !!process.env.AWS_S3_SECRET_ACCESSKEY)) {
+        if ((!!process.env.AWS_S3_ACCESSKEY_ID) && (!!process.env.AWS_S3_SECRET_ACCESSKEY)) {
             console.log('s3 keys found!')
             resolve()
         } else {
