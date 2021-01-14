@@ -181,6 +181,12 @@ app.post('/', (req, res) => {
     })
 })
 
+app.get('/', (req, res) => {
+    res.json({
+        message: 'Message!'
+    })
+})
+
 function isValidTwit(twit) {
     //console.log(twit)
     let validity = twit.userName && (twit.userName.toString().trim() !== '') && twit.content && (twit.content.toString().trim() !== '');
