@@ -16,6 +16,25 @@ const fsPromises = require('fs/promises')
 const NewsAPI = require('newsapi');
 const AWS = require('aws-sdk');//
 //const multerS3 = require('multer-s3');
+const md5 = require('md5');
+
+const fetch = require('node-fetch')
+const withQuery = require('with-query').default
+
+const EMAIL_ADDRESS = global.env.EMAIL_ADDRESS
+const EMAIL_PASS = global.env.EMAIL_PASSWORD
+
+///////////
+const nodemailer = require('nodemailer');
+
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: EMAIL_ADDRESS,
+    pass: EMAIL_PASS
+  }
+});
+///////////
 
 const NEWS_API_KEY = global.env.NEWS_API_KEY;
 
@@ -145,7 +164,34 @@ function isValidTwit(twit) {
 }
 
 app.post('/api/post-twit', 
+    (req, res, next) => {
+        const auth = req.get('Authorization');
+        if (null == auth) {
+            res.status(401)
+            res.json({message: 'Missing Authorization Header'})
+            return
+        }
+        //Bearere Authoprization
+        //Bearer <token>
+        const terms = auth.split(' ');
+        if (terms.length != 2 || (terms[0] != 'Bearer')) {
+            res.status(403)
+            res.json( { message: 'Incorrect Authorization'})
+            return
+        }
 
+        const token = terms[1]
+        try {
+            const verified = jwt.verify(token, TOKEN_SECRET)
+            console.info('Verified token: ', verified)
+            req.token = verified; //add token to req for next()
+            next()
+        } catch(e) {
+            res.status(403)
+            res.json( { message: 'Incorrect token', error: e})
+            return
+        }
+    },
     (req, res, next) => {
         //res.setHeader('Access-Control-Allow-Origin', 'http://localhost:4200');
 
@@ -169,15 +215,15 @@ app.post('/api/post-twit',
             next();
         }
     },
-
     async (req, res, next) => {
-        //console.log(req.body)   
-        if (isValidTwit(req.body)) { 
+        //console.log(req.body) 
+        console.log(">>>>>",req.body.userName, req.token.sub) 
+        if (isValidTwit(req.body) && req.body.userName.toString().trim() === req.token.sub) { 
 
             console.log(req.body)
             //insert into db
             const twit = {
-                name: req.body.userName.toString(),
+                name: req.body.userName.trim().toString(),
                 content: req.body.content.toString(),
                 created: new Date()
             }
@@ -205,7 +251,7 @@ app.post('/api/post-twit',
     }
 )
 
-app.get('/api/twits/:userName', async (req, res) => { // /:userName?page=1
+app.get('/api/twits/:userName', async (req, res) => { // /:userName?page=1 notyet
 
     const userName = req.params.userName
 
@@ -254,6 +300,16 @@ async function isUserNameInDb(registrationDetails) {
     return true
 }
 
+//implement if have time
+const mailRegistered = ( userName, userEmail) => { 
+    return {
+        from: 'youremail@gmail.com',
+        to: userEmail,
+        subject: `Hello ${userName}, this is Twitta! Your registration is successful!`,
+        text: `Hello ${userName}, Thank you for joining us!`
+    }
+};
+
 app.post('/api/register', async ( req, res) => {
     console.log(req.body)
     const isUserNameInDbVar = await isUserNameInDb(req.body)
@@ -272,6 +328,21 @@ app.post('/api/register', async ( req, res) => {
     if (isValidRegistrationDetails(req.body)) { 
 
         console.log(req.body)
+
+        //test if user exists
+        const user = req.body.userName.trim().toString();
+        const userRecord = mongoClient.db(MONGO_DATABASE).collection(MONGO_TWITS_COLLECTION).find({"userName" : user})
+        const userRecordList = []
+        await userRecord.forEach(
+                function(myDoc) { userRecordList.unshift(myDoc)}
+        )
+        if (userRecordList.length > 0) {
+            res.status(422)
+            res.json(
+                {message: 'User exists'}
+            )
+        }
+
         //insert into db
         const registrationDetails = {
             userName: req.body.userName.trim().toString(),
@@ -340,6 +411,8 @@ app.post('/api/authenticate',
     }
 )
 
+//for ref only unused
+/*
 app.get('/api/admin', //the secret
     (req, res, next) => {
             const auth = req.get('Authorization');
@@ -370,14 +443,78 @@ app.get('/api/admin', //the secret
             }
     },
     (req, res) => {
+        
         res.status(200);
-
         res.json({ message: 'ok'})
     }
 )
 
- //uncomment this is ok the bot is blocked by a user neeed to set a new bot
-app.get('/api/news', async (req, res) => {    
+*/
+
+const mailResetPassword = (userEmail, newPassword) => { 
+    return {
+    from: 'youremail@gmail.com',
+    to: userEmail,
+    subject: 'This is Twitta! You have resetted your password',
+    text: `Your new password is ${newPassword}`
+}
+};
+
+/* no need
+app.post('/api/send-reset-password-email', (req, res) => {
+
+    const date = new Date();
+    const time = date.getMilliseconds();
+    const newPassword = md5(time);
+
+    console.log(newPassword)
+    
+    transporter.sendMail(mailResetPassword(req.body.userEmail, newPassword), function(error, info){
+        if (error) {
+            console.log(error);
+        } else {
+            console.log('Email sent: ' + info.response);
+        }
+    });
+})
+
+*/
+
+app.post('/api/reset-password'), (req, res) => {
+
+    const emailAddress = req.body.emailAddress
+    ///////////////////////////////////////////////////////////////////////////// <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+    const checkEmailExistsCursor = mongoClient.db(MONGO_DATABASE).collection(MONGO_USERINFO_COLLECTION).find({ 'email': emailAddress} )
+
+    checkEmailExistsCursor.forEach(
+        function(myDoc) { usersRecordsList.unshift(myDoc)}
+    )
+
+    if (checkEmailExistsCursor.length < 0) {
+        res.status(422)
+            .json({ message: 'Email does not exist!'})
+            return
+    }
+
+    const date = new Date();
+    const time = date.getMilliseconds();
+    const newPassword = md5(time);
+
+    console.log(newPassword)
+
+    const emailCursor = mongoClient.db(MONGO_DATABASE).collection(MONGO_USERINFO_COLLECTION).updateOne({ 'email': emailAddress }, { 'password': newPassword } )
+    
+    transporter.sendMail(mailResetPassword(req.body.userEmail, newPassword), function(error, info){
+        if (error) {
+            console.log(error);
+        } else {
+            console.log('Email sent: ' + info.response);
+            res.status(200).json({ message: `Email sent: ${info.response}`})
+        }
+    });
+}
+
+ app.get('/api/news', async (req, res) => {    
     //const length =
         
     const country = 'sg'
@@ -411,6 +548,42 @@ app.get('/api/news', async (req, res) => {
 })
 
 
+app.get("/api/twits-count/:userName", async (req, res) => { // /numUsers
+    
+    const userName = req.params.userName
+
+    const usersCursor = mongoClient.db(MONGO_DATABASE).collection(MONGO_USERINFO_COLLECTION).aggregate([
+        { //works on the sdesktop dun work here!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+            $match: { userName: userName }
+        },
+        {
+            $group: {
+            _id: "$userName",
+            totalTwits: { $sum: 1 },
+            }
+        },
+        {
+            $sort: { _id: -1 }
+        }
+    ])
+
+
+    const usersRecordsList = []
+    await usersCursor.forEach(
+            function(myDoc) { usersRecordsList.unshift(myDoc)}
+    )
+
+    console.log("hello",usersRecordsList)
+
+    if (usersRecordsList.length < 0) {
+        res.status(422)
+        res.json(
+            {message: 'No user exists'}
+        )
+    }
+
+    res.status(200).json(usersRecordsList)
+})
 
 //FS
 //Set destination directory for multer (multiple part file) upload
@@ -426,7 +599,7 @@ const AWS_S3_SECRET_ACCESSKEY = global.env.AWS_S3_SECRET_ACCESSKEY;//
 const AWS_S3_BUCKET_NAME = global.env.AWS_S3_BUCKET_NAME;//
 
 ///////////////////////////////////////////// UPLOAD TO S3
-const COLLECTION = 'temperature'
+const MONGO_PROFILEPIC_COLLECTION = 'ProfilePic'
 /*
 ops: [
     {
@@ -491,6 +664,9 @@ const upload = multer({
 
 app.post('/api/upload', upload.single('avatar'), (req, resp) => {
 
+    if (req.file == 'undefined') {
+        res.status(422).json({message: 'No file attached to request.'})
+    }
 	console.info('>>> req.body: ', req.body)
 	console.info('>>> req.file: ', req.file)
 
@@ -499,20 +675,47 @@ app.post('/api/upload', upload.single('avatar'), (req, resp) => {
 		fs.unlink(req.file.path, () => { })
 	})
 
-	const doc = mkUserProfilePicEntry(req.body, req.file.filename)
+	//const doc = mkUserProfilePicEntry(req.body, req.file.filename)
 
 	readFile(req.file.path)
 		.then(buff => 
 			putObject(req.file, buff, s3)
 		)
-		.then(() => 
-			mongoClient.db(MONGO_DATABASE).collection(COLLECTION)
-				.insertOne(doc)
-		)
+        .then((results) => {
+            /* pic exists
+            const user = req.body.userName.trim().toString();
+            const userRecord = mongoClient.db(MONGO_DATABASE).collection(MONGO_PROFILEPIC_COLLECTION).find({"user" : user})
+            const userRecordList = []
+            await userRecord.forEach(
+                    function(myDoc) { userRecordList.unshift(myDoc)}
+            )
+            if (userRecordList.length > 0) {
+                res.status(422)
+                res.json(
+                    {message: 'User exists'}
+                )
+            }
+            //insert into db 
+            //mongoClient.db(MONGO_DATABASE).collection(MONGO_COLLECTION).replaceOne({"userName": req.body.userName}, doc)
+            
+			mongoClient.db(MONGO_DATABASE).collection(MONGO_COLLECTION)
+                .insertOne(doc)
+                
+            */
+           console.log('putObject returns: ', results)
+
+           return mongoClient.db(MONGO_DATABASE).collection(MONGO_PROFILEPIC_COLLECTION).updateOne(
+            {"name": req.body.userName},
+            { $set: {timeStamp: new Date(), imageName: req.file.filename}},
+            {upsert: true,}
+         )
+
+                     
+        })
 		.then(results => {
 			console.info('insert results: ', results)
 			resp.status(200)
-			resp.json({ imageName: results.ops[0].imageName })
+			resp.json({ imageName: req.file.filename })
 		})
 		.catch(error => {
 			console.error('insert error: ', error)
@@ -521,7 +724,27 @@ app.post('/api/upload', upload.single('avatar'), (req, resp) => {
 		})
 })
 
-///////////////////////////////////////////////////////////////////////////////////////////////
+app.get('/profile-pic', async (req, res) => {
+
+    let profilePicCursor = mongoClient.db(MONGO_DATABASE).getCollection(MONGO_PROFILEPIC_COLLECTION).find({ 'user': req.body.userName })
+    const profilePicList = []
+    await usersCursor.forEach(
+            function(myDoc) { usersRecordsList.unshift(myDoc)}
+    )
+
+    if (profilePicList.length < 0) {
+        res.status(422)
+        res.json(
+            { message: 'No user exists' }
+        )
+    }
+
+    profilePicListObject = JSON.parse(profilePicList)
+
+    console.log(profilePicListObject.imageName)
+
+    res.status(200).json({ imageName: profilePicListObject.imageName })
+})
 
 /* Run Server*/
 
